@@ -110,9 +110,9 @@ func main() {
 
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
-	cfg := nsq.Config{}
+	cfg := nsq.NewConfig()
 
-	consumer, err := nsq.NewConsumer(*topic, *channel, &cfg)
+	consumer, err := nsq.NewConsumer(*topic, *channel, cfg)
 	if err != nil {
 		log.Fatalln(err)
 	}
