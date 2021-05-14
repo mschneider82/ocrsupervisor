@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	batchv1 "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -51,15 +52,66 @@ func (h *handler) HandleMessage(message *nsq.Message) error {
 	file := filepath.Base(e.Key)
 	bucket := filepath.Dir(e.Key)
 
-	pod := getPodObject(file, bucket)
+	/*
+		pod := getPodObject(file, bucket)
 
-	pod, err = h.kube.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		pod, err = h.kube.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+		if err != nil {
+			panic(err)
+		}*/
+
+	jobSpec := getJobObject(file, bucket)
+	jobs := h.kube.BatchV1().Jobs("ocr")
+
+	_, err = jobs.Create(context.TODO(), jobSpec, metav1.CreateOptions{})
 	if err != nil {
-		panic(err)
+		log.Fatalln("Failed to create K8s job.:", err.Error())
 	}
+
 	fmt.Println("Pod created successfully...")
 
 	return nil
+}
+
+func getJobObject(filename, bucket string) *batchv1.Job {
+	var backOffLimit int32 = 0
+	var ttl int32 = 120
+
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			//	Name:      "ocrjob",
+			GenerateName: "ocr",
+			Namespace:    "ocr",
+		},
+		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: &ttl,
+			Template: core.PodTemplateSpec{
+				Spec: core.PodSpec{
+					Containers: []core.Container{
+						{
+							Name:            "s3ocr",
+							Image:           "mschneider82/s3ocr",
+							ImagePullPolicy: core.PullIfNotPresent,
+							Command:         []string{"/home/docker/s3ocr"},
+							Args: []string{
+								"--endpoint=" + *endpoint,
+								"--accesskey=" + *accesskey,
+								"--secret=" + *secretkey,
+								"--useSSL",
+								"--bucket=" + bucket,
+								"--object=" + filename,
+								"--seafileserver=" + *seafileserver,
+								"--seafiletoken=" + *seafiletoken,
+								"--seafilelibraryid=" + *seafilelibraryid,
+							},
+						},
+					},
+					RestartPolicy: core.RestartPolicyNever,
+				},
+			},
+			BackoffLimit: &backOffLimit,
+		},
+	}
 }
 
 func getPodObject(filename, bucket string) *core.Pod {
