@@ -31,7 +31,6 @@ var (
 	channel          = kingpin.Flag("channel", "nsq channelname [Env: NSQ_CHANNEL]").Default("ocrsuper").OverrideDefaultFromEnvar("NSQ_CHANNEL").String()
 	maxInFlight      = kingpin.Flag("max-in-flight", "max number of messages to allow in flight [Env: NSQ_MAXINFLIGHT]").Default("200").OverrideDefaultFromEnvar("NSQ_MAXINFLIGHT").Int()
 	lookupdHTTPAddrs = kingpin.Flag("lookupdHTTPAddrs", "lookupdHTTPAddrs [Env: NSQ_LOOKUPD]").Default("localhost:4161").OverrideDefaultFromEnvar("NSQ_LOOKUPD").Strings()
-	kubeconfig       = kingpin.Flag("kubeconfig", "kubeconfig file  HOME/.kube/config").Required().String()
 )
 
 type handler struct {
@@ -78,7 +77,8 @@ func getPodObject(filename, bucket string) *core.Pod {
 					Name:            "s3ocr",
 					Image:           "mschneider82/s3ocr",
 					ImagePullPolicy: core.PullIfNotPresent,
-					Command: []string{
+					Command:         []string{"/home/docker/s3ocr"},
+					Args: []string{
 						"--endpoint=" + *endpoint,
 						"--accesskey=" + *accesskey,
 						"--secret=" + *secretkey,
@@ -96,6 +96,7 @@ func getPodObject(filename, bucket string) *core.Pod {
 }
 
 func main() {
+	kingpin.Parse()
 	// build configuration from the config file.
 	config, err := rest.InClusterConfig()
 	//config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
@@ -111,7 +112,7 @@ func main() {
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
 	cfg := nsq.NewConfig()
-
+	fmt.Printf("create consumer for topic: %s chan: %s\n", *topic, *channel)
 	consumer, err := nsq.NewConsumer(*topic, *channel, cfg)
 	if err != nil {
 		log.Fatalln(err)
