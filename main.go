@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,15 +15,16 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/nsqio/go-nsq"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
 	endpoint         = kingpin.Flag("endpoint", "s3 endpoint").Required().String()
 	accesskey        = kingpin.Flag("accesskey", "s3 accesskey").Required().String()
-	secretkey        = kingpin.Flag("secret", "s3 secret").Required().String()
+	secretkey        = kingpin.Flag("secret", "s3 secret").OverrideDefaultFromEnvar("S3_SECRET").Required().String()
 	seafileserver    = kingpin.Flag("seafileserver", "url to seafile server").Required().String()
-	seafiletoken     = kingpin.Flag("seafiletoken", "token see https://download.seafile.com/published/web-api/home.md").Required().String()
+	seafiletoken     = kingpin.Flag("seafiletoken", "token see https://download.seafile.com/published/web-api/home.md").OverrideDefaultFromEnvar("SEAFILE_TOKEN").Required().String()
 	seafilelibraryid = kingpin.Flag("seafilelibraryid", "e.g. 3e040126-4533-4d0c-97f3-baa284915515").Required().String()
 
 	topic            = kingpin.Flag("topic", "nsq topic name [Env: NSQ_TOPIC]").Default("minio").OverrideDefaultFromEnvar("NSQ_TOPIC").String()
@@ -42,33 +41,27 @@ func (h *handler) HandleMessage(message *nsq.Message) error {
 	var e Event
 	err := json.Unmarshal(message.Body, &e)
 	if err != nil {
+		log.Info().Msgf("event is not a s3 bucket notification msg from minio, skipping nsq message: %s", err.Error())
 		return err
 	}
 
 	if e.EventName != "s3:ObjectCreated:Put" {
+		log.Info().Msg("event is not a s3 bucket notification msg from minio, skipping nsq message")
 		return nil
 	}
 
 	file := filepath.Base(e.Key)
 	bucket := filepath.Dir(e.Key)
 
-	/*
-		pod := getPodObject(file, bucket)
-
-		pod, err = h.kube.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
-		if err != nil {
-			panic(err)
-		}*/
-
 	jobSpec := getJobObject(file, bucket)
 	jobs := h.kube.BatchV1().Jobs("ocr")
 
 	_, err = jobs.Create(context.TODO(), jobSpec, metav1.CreateOptions{})
 	if err != nil {
-		log.Fatalln("Failed to create K8s job.:", err.Error())
+		log.Err(err).Msg("Failed to create K8s job")
 	}
 
-	fmt.Println("Pod created successfully...")
+	log.Info().Msg("Pod created successfully...")
 
 	return nil
 }
@@ -114,6 +107,53 @@ func getJobObject(filename, bucket string) *batchv1.Job {
 	}
 }
 
+func main() {
+	kingpin.Parse()
+	// build configuration from the config file.
+	config, err := rest.InClusterConfig()
+	//config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	if err != nil {
+		log.Fatal().Err(err).Msg("rest InClusterConfig")
+	}
+	// create kubernetes clientset. this clientset can be used to create,delete,patch,list etc for the kubernetes resources
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Fatal().Err(err).Msg("create kubernetes clientset")
+	}
+
+	termChan := make(chan os.Signal, 1)
+	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+	cfg := nsq.NewConfig()
+
+	log.Info().Msgf("Create Nsq consumer for topic: %s chan: %s\n", *topic, *channel)
+	consumer, err := nsq.NewConsumer(*topic, *channel, cfg)
+	if err != nil {
+		log.Fatal().Err(err).Str("topic", *topic).
+			Str("channel", *channel).
+			Msg("create nsq consumer")
+	}
+
+	h := &handler{kube: clientset}
+	consumer.AddHandler(h)
+
+	err = consumer.ConnectToNSQLookupds(*lookupdHTTPAddrs)
+	if err != nil {
+		log.Fatal().Err(err).Str("topic", *topic).
+			Str("channel", *channel).
+			Strs("nsqlookupds", *lookupdHTTPAddrs).
+			Msg("connectToNSQLookupds")
+	}
+
+	log.Info().Msgf("Awaiting messages from NSQ topic %s", *topic)
+	select {
+	case <-termChan:
+		consumer.Stop()
+		<-consumer.StopChan
+		log.Info().Msg("Exiting.")
+	}
+}
+
+/*
 func getPodObject(filename, bucket string) *core.Pod {
 	return &core.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -146,43 +186,4 @@ func getPodObject(filename, bucket string) *core.Pod {
 		},
 	}
 }
-
-func main() {
-	kingpin.Parse()
-	// build configuration from the config file.
-	config, err := rest.InClusterConfig()
-	//config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err != nil {
-		panic(err)
-	}
-	// create kubernetes clientset. this clientset can be used to create,delete,patch,list etc for the kubernetes resources
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err)
-	}
-
-	termChan := make(chan os.Signal, 1)
-	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
-	cfg := nsq.NewConfig()
-	fmt.Printf("create consumer for topic: %s chan: %s\n", *topic, *channel)
-	consumer, err := nsq.NewConsumer(*topic, *channel, cfg)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	h := &handler{kube: clientset}
-	consumer.AddHandler(h)
-
-	err = consumer.ConnectToNSQLookupds(*lookupdHTTPAddrs)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	log.Printf("Awaiting messages from NSQ topic ", *topic)
-	select {
-	case <-termChan:
-		consumer.Stop()
-		<-consumer.StopChan
-		log.Printf("Exiting.")
-	}
-}
+*/
