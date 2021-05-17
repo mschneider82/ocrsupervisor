@@ -89,13 +89,33 @@ func getJobObject(filename, bucket string) *batchv1.Job {
 							Args: []string{
 								"--endpoint=" + *endpoint,
 								"--accesskey=" + *accesskey,
-								"--secret=" + *secretkey,
+								//	"--secret=" + *secretkey,
 								"--useSSL",
 								"--bucket=" + bucket,
 								"--object=" + filename,
 								"--seafileserver=" + *seafileserver,
-								"--seafiletoken=" + *seafiletoken,
+								//	"--seafiletoken=" + *seafiletoken,
 								"--seafilelibraryid=" + *seafilelibraryid,
+							},
+							Env: []core.EnvVar{
+								{
+									Name: "S3_SECRET",
+									ValueFrom: &core.EnvVarSource{
+										SecretKeyRef: &core.SecretKeySelector{
+											LocalObjectReference: core.LocalObjectReference{Name: "s3secret"},
+											Key:                  "s3secret",
+										},
+									},
+								},
+								{
+									Name: "SEAFILE_TOKEN",
+									ValueFrom: &core.EnvVarSource{
+										SecretKeyRef: &core.SecretKeySelector{
+											LocalObjectReference: core.LocalObjectReference{Name: "seafiletoken"},
+											Key:                  "seafiletoken",
+										},
+									},
+								},
 							},
 						},
 					},
