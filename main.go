@@ -67,8 +67,8 @@ func (h *handler) HandleMessage(message *nsq.Message) error {
 }
 
 func getJobObject(filename, bucket string) *batchv1.Job {
-	var backOffLimit int32 = 0
-	var ttl int32 = 120
+	var backOffLimit int32 = 10
+	var ttl int32 = 1200
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
