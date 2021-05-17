@@ -82,10 +82,10 @@ func getJobObject(filename, bucket string) *batchv1.Job {
 				Spec: core.PodSpec{
 					Containers: []core.Container{
 						{
-							Name:            "s3ocr",
-							Image:           "mschneider82/s3ocr",
-							ImagePullPolicy: core.PullIfNotPresent,
-							Command:         []string{"/home/docker/s3ocr"},
+							Name:  "s3ocr",
+							Image: "mschneider82/s3ocr",
+							//ImagePullPolicy: core.PullIfNotPresent,
+							Command: []string{"/home/docker/s3ocr"},
 							Args: []string{
 								"--endpoint=" + *endpoint,
 								"--accesskey=" + *accesskey,
