@@ -1,0 +1,48 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ocrrole
+  namespace: ocr
+rules:
+  - verbs:
+      - create
+      - get
+      - list
+      - delete
+      - deletecollection
+    apiGroups:
+      - ''
+    resources:
+      - pods
+      - pods/log
+  - verbs:
+      - create
+      - get
+      - delete
+    apiGroups:
+      - batch
+    resources:
+      - jobs
+      - jobs/status
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: default
+  namespace: ocr
+secrets:
+  - name: default-token-6p2n7
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: read-pods
+  namespace: ocr
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: ocr
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ocrrole
