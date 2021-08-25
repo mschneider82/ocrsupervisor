@@ -31,6 +31,14 @@ jobs:
       packages: write
 
     steps:
+      - name: Docker meta
+        id: docker_meta
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: l7r7/sample
+          tag-custom: latest
+          tag-semver: |
+            {{raw}}
       - name: Checkout repository
         uses: actions/checkout@v2
 
