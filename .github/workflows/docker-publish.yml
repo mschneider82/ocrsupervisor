@@ -6,8 +6,6 @@ name: Docker
 # documentation.
 
 on:
-  schedule:
-    - cron: '21 14 * * *'
   push:
     branches: [ main ]
     # Publish semver tags as releases.
@@ -31,14 +29,6 @@ jobs:
       packages: write
 
     steps:
-      - name: Docker meta
-        id: docker_meta
-        uses: crazy-max/ghaction-docker-meta@v1
-        with:
-          images: l7r7/sample
-          tag-custom: latest
-          tag-semver: |
-            {{raw}}
       - name: Checkout repository
         uses: actions/checkout@v2
 
@@ -67,5 +57,5 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ghcr.io/mschneider82/ocrsupervisor:latest
           labels: ${{ steps.meta.outputs.labels }}
